@@ -3,12 +3,12 @@ import requests
 import oracledb
 import os
 import re
+import flet as ft
 from dotenv import load_dotenv
 from typing import Optional, List, Dict, Tuple
 from datetime import datetime
 from decimal import Decimal
 
-# Variables de entorno
 load_dotenv()
 
 
@@ -16,25 +16,11 @@ class Database:
     """Clase para gestionar la conexión y operaciones con Oracle Database"""
     
     def __init__(self, username: str, dsn: str, password: str):
-        """
-        Inicializa la conexión a la base de datos
-        
-        Args:
-            username: Usuario de Oracle
-            dsn: Data Source Name de Oracle
-            password: Contraseña de Oracle
-        """
         self.username = username
         self.dsn = dsn
         self.password = password
     
     def get_connection(self) -> oracledb.Connection:
-        """
-        Obtiene una conexión a la base de datos
-        
-        Returns:
-            Objeto de conexión a Oracle
-        """
         try:
             return oracledb.connect(
                 user=self.username,
@@ -46,9 +32,7 @@ class Database:
     
     def create_all_tables(self) -> None:
         """Crea todas las tablas necesarias del sistema"""
-        
         tables = [
-            # Tabla de usuarios con autenticación
             """
             CREATE TABLE USERS (
                 id INTEGER PRIMARY KEY,
@@ -58,8 +42,6 @@ class Database:
                 ultimo_acceso DATE
             )
             """,
-            
-            # Tabla de indicadores económicos
             """
             CREATE TABLE INDICADORES_ECONOMICOS (
                 id INTEGER PRIMARY KEY,
@@ -73,8 +55,6 @@ class Database:
                     REFERENCES USERS(username)
             )
             """,
-            
-            # NUEVA TABLA: Auditoría de consultas de usuarios
             """
             CREATE TABLE AUDITORIA_CONSULTAS (
                 id INTEGER PRIMARY KEY,
@@ -90,38 +70,19 @@ class Database:
                 CONSTRAINT chk_resultado CHECK (resultado_exitoso IN ('S', 'N'))
             )
             """,
-            
-            # Secuencia para IDs de usuarios
             "CREATE SEQUENCE seq_users START WITH 1 INCREMENT BY 1",
-            
-            # Secuencia para IDs de indicadores
             "CREATE SEQUENCE seq_indicadores START WITH 1 INCREMENT BY 1",
-            
-            # Secuencia para IDs de auditoría
             "CREATE SEQUENCE seq_auditoria START WITH 1 INCREMENT BY 1"
         ]
         
         for table_sql in tables:
             try:
                 self.query(table_sql)
-                print(f"✓ Tabla/Secuencia creada exitosamente")
             except Exception as e:
-                if "ORA-00955" in str(e) or "ORA-02289" in str(e):
-                    print(f"⚠ La tabla/secuencia ya existe")
-                else:
-                    print(f"✗ Error al crear tabla: {e}")
+                if "ORA-00955" not in str(e) and "ORA-02289" not in str(e):
+                    pass
     
     def query(self, sql: str, parameters: Optional[dict] = None) -> Optional[List[Tuple]]:
-        """
-        Ejecuta una consulta SQL en la base de datos
-        
-        Args:
-            sql: Sentencia SQL a ejecutar
-            parameters: Diccionario con parámetros para la consulta
-            
-        Returns:
-            Lista de tuplas con los resultados (solo para SELECT)
-        """
         try:
             with self.get_connection() as conn:
                 with conn.cursor() as cur:
@@ -130,20 +91,12 @@ class Database:
                     else:
                         cur.execute(sql)
                     
-                    # Si es SELECT, retornar resultados
                     if sql.strip().upper().startswith("SELECT"):
-                        resultado = cur.fetchall()
-                        return resultado
+                        return cur.fetchall()
                     
-                    # Para INSERT, UPDATE, DELETE
                     conn.commit()
                     return None
-                    
         except oracledb.DatabaseError as e:
-            error_obj, = e.args
-            print(f"✗ Error en la base de datos:")
-            print(f"  Código: {error_obj.code}")
-            print(f"  Mensaje: {error_obj.message}")
             raise
 
 
@@ -156,21 +109,6 @@ class Auditoria:
                           fecha_solicitada: Optional[str] = None,
                           resultado_exitoso: bool = True,
                           descripcion: Optional[str] = None) -> bool:
-        """
-        Registra una consulta en la tabla de auditoría
-        
-        Args:
-            db: Instancia de Database
-            usuario: Usuario que realiza la consulta
-            tipo_consulta: Tipo de operación realizada
-            indicador_codigo: Código del indicador consultado (opcional)
-            fecha_solicitada: Fecha solicitada en la consulta (opcional)
-            resultado_exitoso: Si la consulta fue exitosa
-            descripcion: Descripción adicional (opcional)
-            
-        Returns:
-            True si se registró exitosamente, False en caso contrario
-        """
         try:
             sql = """
             INSERT INTO AUDITORIA_CONSULTAS 
@@ -192,25 +130,11 @@ class Auditoria:
             
             db.query(sql, parametros)
             return True
-            
-        except Exception as e:
-            print(f"⚠ Error al registrar auditoría: {e}")
+        except Exception:
             return False
     
     @staticmethod
-    def obtener_consultas_usuario(db: Database, usuario: str, 
-                                  limite: int = 20) -> Optional[List[Tuple]]:
-        """
-        Obtiene el historial de consultas de un usuario
-        
-        Args:
-            db: Instancia de Database
-            usuario: Usuario del cual obtener el historial
-            limite: Número máximo de registros a retornar
-            
-        Returns:
-            Lista de tuplas con los registros o None si hay error
-        """
+    def obtener_consultas_usuario(db: Database, usuario: str, limite: int = 20) -> Optional[List[Tuple]]:
         try:
             sql = """
             SELECT tipo_consulta, indicador_codigo, fecha_solicitada,
@@ -221,25 +145,12 @@ class Auditoria:
             ORDER BY fecha_hora_consulta DESC
             FETCH FIRST :p_limite ROWS ONLY
             """
-            
             return db.query(sql, {"p_usuario": usuario, "p_limite": limite})
-            
-        except Exception as e:
-            print(f"✗ Error al obtener consultas: {e}")
+        except Exception:
             return None
     
     @staticmethod
     def obtener_estadisticas_usuario(db: Database, usuario: str) -> Optional[Dict]:
-        """
-        Obtiene estadísticas de consultas de un usuario
-        
-        Args:
-            db: Instancia de Database
-            usuario: Usuario del cual obtener estadísticas
-            
-        Returns:
-            Diccionario con estadísticas o None si hay error
-        """
         try:
             sql = """
             SELECT 
@@ -265,274 +176,151 @@ class Auditoria:
                     "primera_consulta": fila[4] or "N/A",
                     "ultima_consulta": fila[5] or "N/A"
                 }
-            
             return None
-            
-        except Exception as e:
-            print(f"✗ Error al obtener estadísticas: {e}")
+        except Exception:
             return None
 
 
 class Validador:
-    """Clase para validar entradas de usuario y prevenir ataques"""
+    """Clase para validar entradas de usuario"""
     
     @staticmethod
     def validar_username(username: str) -> Tuple[bool, str]:
-        """
-        Valida el nombre de usuario
-        
-        Args:
-            username: Nombre de usuario a validar
-            
-        Returns:
-            Tupla (es_valido, mensaje_error)
-        """
         if not username or len(username.strip()) == 0:
             return False, "El nombre de usuario no puede estar vacío"
-        
         if len(username) < 4:
             return False, "El nombre de usuario debe tener al menos 4 caracteres"
-        
         if len(username) > 32:
             return False, "El nombre de usuario no puede exceder 32 caracteres"
-        
-        # Solo permitir letras, números y guión bajo
         if not re.match(r'^[a-zA-Z0-9_]+$', username):
-            return False, "El nombre de usuario solo puede contener letras, números y guión bajo"
-        
+            return False, "Solo puede contener letras, números y guión bajo"
         return True, ""
     
     @staticmethod
     def validar_password(password: str) -> Tuple[bool, str]:
-        """
-        Valida la contraseña según criterios de seguridad
-        
-        Args:
-            password: Contraseña a validar
-            
-        Returns:
-            Tupla (es_valido, mensaje_error)
-        """
         if not password or len(password.strip()) == 0:
             return False, "La contraseña no puede estar vacía"
-        
         if len(password) < 8:
             return False, "La contraseña debe tener al menos 8 caracteres"
-        
         if len(password) > 64:
             return False, "La contraseña no puede exceder 64 caracteres"
         
-        # Verificar complejidad
         tiene_mayuscula = any(c.isupper() for c in password)
         tiene_minuscula = any(c.islower() for c in password)
         tiene_numero = any(c.isdigit() for c in password)
         
         if not (tiene_mayuscula and tiene_minuscula and tiene_numero):
-            return False, "La contraseña debe contener mayúsculas, minúsculas y números"
-        
+            return False, "Debe contener mayúsculas, minúsculas y números"
         return True, ""
     
     @staticmethod
     def validar_fecha(fecha_str: str) -> Tuple[bool, str, Optional[str]]:
-        """
-        Valida y normaliza formato de fecha
-        
-        Args:
-            fecha_str: Fecha en formato DD-MM-YYYY
-            
-        Returns:
-            Tupla (es_valido, mensaje_error, fecha_normalizada)
-        """
         if not fecha_str:
-            return True, "", None  # Fecha opcional
+            return True, "", None
         
-        # Validar formato
         if not re.match(r'^\d{2}-\d{2}-\d{4}$', fecha_str):
-            return False, "Formato de fecha inválido. Use DD-MM-YYYY", None
+            return False, "Formato inválido. Use DD-MM-YYYY", None
         
         try:
             partes = fecha_str.split('-')
-            dia = int(partes[0])
-            mes = int(partes[1])
-            anio = int(partes[2])
+            dia, mes, anio = int(partes[0]), int(partes[1]), int(partes[2])
             
-            # Validar rangos
             if not (1 <= mes <= 12):
                 return False, "Mes inválido (1-12)", None
-            
             if not (1 <= dia <= 31):
                 return False, "Día inválido (1-31)", None
-            
             if not (2000 <= anio <= 2100):
                 return False, "Año fuera de rango (2000-2100)", None
             
-            # Intentar crear fecha para validar
             fecha = datetime(anio, mes, dia)
-            
-            # Normalizar al formato esperado por la API
-            fecha_normalizada = fecha.strftime("%d-%m-%Y")
-            
-            return True, "", fecha_normalizada
-            
+            return True, "", fecha.strftime("%d-%m-%Y")
         except ValueError as e:
             return False, f"Fecha inválida: {e}", None
     
     @staticmethod
     def sanitizar_input(texto: str) -> str:
-        """
-        Sanitiza entrada de texto para prevenir inyecciones
-        
-        Args:
-            texto: Texto a sanitizar
-            
-        Returns:
-            Texto sanitizado
-        """
-        # Eliminar caracteres peligrosos
         texto = texto.strip()
         texto = re.sub(r'[;\'"\\<>]', '', texto)
         return texto
 
 
 class Auth:
-    """Clase para gestionar autenticación y autorización de usuarios"""
+    """Clase para gestionar autenticación"""
     
     @staticmethod
     def login(db: Database, username: str, password: str) -> Tuple[bool, str]:
-        """
-        Realiza el login de un usuario
-        
-        Args:
-            db: Instancia de Database
-            username: Nombre de usuario
-            password: Contraseña en texto plano
-            
-        Returns:
-            Tupla (exito, mensaje)
-        """
         try:
-            # Validar entradas
             username = Validador.sanitizar_input(username)
-            
-            # Buscar usuario
             resultado = db.query(
-                sql="SELECT username, password FROM USERS WHERE username = :p_username",
-                parameters={"p_username": username}
+                "SELECT username, password FROM USERS WHERE username = :p_username",
+                {"p_username": username}
             )
             
             if not resultado or len(resultado) == 0:
-                # Registrar intento fallido
-                Auditoria.registrar_consulta(
-                    db, username, "LOGIN_FALLIDO", 
-                    resultado_exitoso=False,
-                    descripcion="Usuario no encontrado"
-                )
+                Auditoria.registrar_consulta(db, username, "LOGIN_FALLIDO", 
+                                            resultado_exitoso=False,
+                                            descripcion="Usuario no encontrado")
                 return False, "Usuario no encontrado"
             
-            # Obtener hash almacenado
             stored_hash = resultado[0][1]
-            
-            # Convertir de string hex a bytes
             if isinstance(stored_hash, str):
                 stored_hash_bytes = bytes.fromhex(stored_hash)
             else:
                 stored_hash_bytes = stored_hash
             
-            # Verificar contraseña
             password_bytes = password.encode("UTF-8")
             
             if bcrypt.checkpw(password_bytes, stored_hash_bytes):
-                # Actualizar último acceso
-                db.query(
-                    sql="UPDATE USERS SET ultimo_acceso = SYSDATE WHERE username = :p_username",
-                    parameters={"p_username": username}
-                )
-                
-                # Registrar login exitoso
-                Auditoria.registrar_consulta(
-                    db, username, "LOGIN_EXITOSO",
-                    resultado_exitoso=True,
-                    descripcion="Inicio de sesión correcto"
-                )
-                
+                db.query("UPDATE USERS SET ultimo_acceso = SYSDATE WHERE username = :p_username",
+                        {"p_username": username})
+                Auditoria.registrar_consulta(db, username, "LOGIN_EXITOSO",
+                                            resultado_exitoso=True,
+                                            descripcion="Inicio de sesión correcto")
                 return True, f"¡Bienvenido {username}!"
             else:
-                # Registrar intento fallido
-                Auditoria.registrar_consulta(
-                    db, username, "LOGIN_FALLIDO",
-                    resultado_exitoso=False,
-                    descripcion="Contraseña incorrecta"
-                )
+                Auditoria.registrar_consulta(db, username, "LOGIN_FALLIDO",
+                                            resultado_exitoso=False,
+                                            descripcion="Contraseña incorrecta")
                 return False, "Contraseña incorrecta"
-                
         except Exception as e:
             return False, f"Error durante el login: {e}"
     
     @staticmethod
     def register(db: Database, username: str, password: str) -> Tuple[bool, str]:
-        """
-        Registra un nuevo usuario en el sistema
-        
-        Args:
-            db: Instancia de Database
-            username: Nombre de usuario
-            password: Contraseña en texto plano
-            
-        Returns:
-            Tupla (exito, mensaje)
-        """
         try:
-            # Validar username
             es_valido, mensaje = Validador.validar_username(username)
             if not es_valido:
                 return False, mensaje
             
-            # Validar password
             es_valido, mensaje = Validador.validar_password(password)
             if not es_valido:
                 return False, mensaje
             
-            # Sanitizar username
             username = Validador.sanitizar_input(username)
             
-            # Verificar si el usuario ya existe
-            resultado = db.query(
-                sql="SELECT username FROM USERS WHERE username = :p_username",
-                parameters={"p_username": username}
-            )
+            resultado = db.query("SELECT username FROM USERS WHERE username = :p_username",
+                               {"p_username": username})
             
             if resultado and len(resultado) > 0:
                 return False, "El nombre de usuario ya está registrado"
             
-            # Hashear contraseña
             password_bytes = password.encode("UTF-8")
             salt = bcrypt.gensalt(rounds=12)
             hashed_password = bcrypt.hashpw(password_bytes, salt)
-            
-            # Convertir hash a string hexadecimal para almacenar
             hash_hex = hashed_password.hex()
             
-            # Insertar usuario
-            db.query(
-                sql="""
+            db.query("""
                 INSERT INTO USERS (id, username, password) 
                 VALUES (seq_users.NEXTVAL, :p_username, :p_password)
                 """,
-                parameters={
-                    "p_username": username,
-                    "p_password": hash_hex
-                }
+                {"p_username": username, "p_password": hash_hex}
             )
             
-            # Registrar el registro exitoso en auditoría
-            Auditoria.registrar_consulta(
-                db, username, "REGISTRO_USUARIO",
-                resultado_exitoso=True,
-                descripcion="Usuario registrado en el sistema"
-            )
+            Auditoria.registrar_consulta(db, username, "REGISTRO_USUARIO",
+                                        resultado_exitoso=True,
+                                        descripcion="Usuario registrado en el sistema")
             
             return True, f"Usuario '{username}' registrado exitosamente"
-            
         except Exception as e:
             return False, f"Error durante el registro: {e}"
 
@@ -542,16 +330,6 @@ class IndicadorEconomico:
     
     def __init__(self, nombre: str, valor: float, fecha: datetime, 
                  codigo: str, unidad_medida: str):
-        """
-        Inicializa un indicador económico
-        
-        Args:
-            nombre: Nombre del indicador
-            valor: Valor del indicador
-            fecha: Fecha del valor
-            codigo: Código del indicador
-            unidad_medida: Unidad de medida
-        """
         self.nombre = nombre
         self.valor = valor
         self.fecha = fecha
@@ -560,171 +338,71 @@ class IndicadorEconomico:
     
     @classmethod
     def from_json(cls, json_data: dict, codigo: str) -> 'IndicadorEconomico':
-        """
-        Crea una instancia desde datos JSON
-        
-        Args:
-            json_data: Diccionario con datos del indicador
-            codigo: Código del indicador solicitado
-            
-        Returns:
-            Instancia de IndicadorEconomico
-        """
         try:
             nombre = json_data.get('nombre', codigo.upper())
             unidad_medida = json_data.get('unidad_medida', '')
-            
-            # Obtener el primer valor de la serie
             serie = json_data.get('serie', [])
-            if not serie or len(serie) == 0:
-                raise ValueError("No hay datos disponibles en la serie")
+            
+            if not serie:
+                raise ValueError("No hay datos disponibles")
             
             primer_dato = serie[0]
             valor = float(primer_dato.get('valor', 0))
             fecha_str = primer_dato.get('fecha', '')
-            
-            # Parsear fecha
             fecha = datetime.fromisoformat(fecha_str.replace('Z', '+00:00'))
             
-            return cls(
-                nombre=nombre,
-                valor=valor,
-                fecha=fecha,
-                codigo=codigo,
-                unidad_medida=unidad_medida
-            )
-            
+            return cls(nombre, valor, fecha, codigo, unidad_medida)
         except Exception as e:
-            raise ValueError(f"Error al deserializar indicador: {e}")
+            raise ValueError(f"Error al deserializar: {e}")
     
     def __str__(self) -> str:
-        """Representación en string del indicador"""
         fecha_formateada = self.fecha.strftime("%d-%m-%Y")
         return f"{self.nombre}: ${self.valor:,.2f} ({fecha_formateada})"
 
 
 class Finance:
-    """Clase para consultar y gestionar indicadores económicos"""
+    """Clase para consultar indicadores económicos"""
     
-    # Mapeo de indicadores disponibles
     INDICADORES = {
-        '1': {'codigo': 'uf', 'nombre': 'Unidad de Fomento (UF)'},
-        '2': {'codigo': 'ivp', 'nombre': 'Índice de Valor Promedio (IVP)'},
-        '3': {'codigo': 'ipc', 'nombre': 'Índice de Precio al Consumidor (IPC)'},
-        '4': {'codigo': 'utm', 'nombre': 'Unidad Tributaria Mensual (UTM)'},
-        '5': {'codigo': 'dolar', 'nombre': 'Dólar Observado'},
-        '6': {'codigo': 'euro', 'nombre': 'Euro'}
+        'uf': 'Unidad de Fomento (UF)',
+        'ivp': 'Índice de Valor Promedio (IVP)',
+        'ipc': 'Índice de Precio al Consumidor (IPC)',
+        'utm': 'Unidad Tributaria Mensual (UTM)',
+        'dolar': 'Dólar Observado',
+        'euro': 'Euro'
     }
     
     def __init__(self, base_url: str = "https://mindicador.cl/api"):
-        """
-        Inicializa el cliente de indicadores económicos
-        
-        Args:
-            base_url: URL base de la API
-        """
         self.base_url = base_url
     
-    def get_indicator(self, codigo_indicador: str, 
-                     fecha: Optional[str] = None,
-                     db: Optional[Database] = None,
-                     usuario: Optional[str] = None) -> Optional[IndicadorEconomico]:
-        """
-        Obtiene un indicador económico de la API
-        
-        Args:
-            codigo_indicador: Código del indicador (uf, dolar, euro, etc.)
-            fecha: Fecha en formato DD-MM-YYYY (opcional)
-            db: Instancia de Database para auditoría (opcional)
-            usuario: Usuario que realiza la consulta (opcional)
-            
-        Returns:
-            Objeto IndicadorEconomico o None si hay error
-        """
+    def get_indicator(self, codigo_indicador: str, fecha: Optional[str] = None,
+                     db: Optional[Database] = None, usuario: Optional[str] = None) -> Optional[IndicadorEconomico]:
         try:
-            # Construir URL
-            if fecha:
-                url = f"{self.base_url}/{codigo_indicador}/{fecha}"
-            else:
-                url = f"{self.base_url}/{codigo_indicador}"
-            
-            # Realizar petición
-            print(f"Consultando: {url}")
+            url = f"{self.base_url}/{codigo_indicador}/{fecha}" if fecha else f"{self.base_url}/{codigo_indicador}"
             response = requests.get(url, timeout=10)
             response.raise_for_status()
             
-            # Deserializar respuesta
             json_data = response.json()
             indicador = IndicadorEconomico.from_json(json_data, codigo_indicador)
             
-            # Registrar consulta exitosa en auditoría
             if db and usuario:
-                Auditoria.registrar_consulta(
-                    db, usuario, "CONSULTA_INDICADOR",
-                    indicador_codigo=codigo_indicador,
-                    fecha_solicitada=fecha,
-                    resultado_exitoso=True,
-                    descripcion=f"Consulta de {indicador.nombre}"
-                )
-            
+                Auditoria.registrar_consulta(db, usuario, "CONSULTA_INDICADOR",
+                                            indicador_codigo=codigo_indicador,
+                                            fecha_solicitada=fecha,
+                                            resultado_exitoso=True,
+                                            descripcion=f"Consulta de {indicador.nombre}")
             return indicador
-            
-        except requests.exceptions.RequestException as e:
-            print(f"✗ Error en la petición HTTP: {e}")
-            
-            # Registrar consulta fallida
-            if db and usuario:
-                Auditoria.registrar_consulta(
-                    db, usuario, "CONSULTA_INDICADOR",
-                    indicador_codigo=codigo_indicador,
-                    fecha_solicitada=fecha,
-                    resultado_exitoso=False,
-                    descripcion=f"Error HTTP: {str(e)[:200]}"
-                )
-            
-            return None
-        except ValueError as e:
-            print(f"✗ Error al procesar datos: {e}")
-            
-            # Registrar consulta fallida
-            if db and usuario:
-                Auditoria.registrar_consulta(
-                    db, usuario, "CONSULTA_INDICADOR",
-                    indicador_codigo=codigo_indicador,
-                    fecha_solicitada=fecha,
-                    resultado_exitoso=False,
-                    descripcion=f"Error de datos: {str(e)[:200]}"
-                )
-            
-            return None
         except Exception as e:
-            print(f"✗ Error inesperado: {e}")
-            
-            # Registrar consulta fallida
             if db and usuario:
-                Auditoria.registrar_consulta(
-                    db, usuario, "CONSULTA_INDICADOR",
-                    indicador_codigo=codigo_indicador,
-                    fecha_solicitada=fecha,
-                    resultado_exitoso=False,
-                    descripcion=f"Error: {str(e)[:200]}"
-                )
-            
+                Auditoria.registrar_consulta(db, usuario, "CONSULTA_INDICADOR",
+                                            indicador_codigo=codigo_indicador,
+                                            fecha_solicitada=fecha,
+                                            resultado_exitoso=False,
+                                            descripcion=str(e)[:200])
             return None
     
     def registrar_indicador(self, db: Database, indicador: IndicadorEconomico,
                            usuario: str) -> Tuple[bool, str]:
-        """
-        Registra un indicador en la base de datos
-        
-        Args:
-            db: Instancia de Database
-            indicador: Objeto IndicadorEconomico a registrar
-            usuario: Usuario que realiza la consulta
-            
-        Returns:
-            Tupla (exito, mensaje)
-        """
         try:
             sql = """
             INSERT INTO INDICADORES_ECONOMICOS 
@@ -735,55 +413,34 @@ class Finance:
              SYSDATE, :p_usuario, :p_sitio)
             """
             
-            parametros = {
+            db.query(sql, {
                 "p_nombre": indicador.nombre,
                 "p_valor": indicador.valor,
                 "p_fecha_valor": indicador.fecha,
                 "p_usuario": usuario,
                 "p_sitio": self.base_url
-            }
+            })
             
-            db.query(sql, parametros)
+            Auditoria.registrar_consulta(db, usuario, "REGISTRO_INDICADOR",
+                                        indicador_codigo=indicador.codigo,
+                                        resultado_exitoso=True,
+                                        descripcion=f"Indicador registrado en BD")
             
-            # Registrar en auditoría
-            Auditoria.registrar_consulta(
-                db, usuario, "REGISTRO_INDICADOR",
-                indicador_codigo=indicador.codigo,
-                resultado_exitoso=True,
-                descripcion=f"Indicador {indicador.nombre} registrado en BD"
-            )
-            
-            return True, "Indicador registrado exitosamente en la base de datos"
-            
+            return True, "Indicador registrado exitosamente"
         except Exception as e:
-            # Registrar fallo en auditoría
-            Auditoria.registrar_consulta(
-                db, usuario, "REGISTRO_INDICADOR",
-                indicador_codigo=indicador.codigo,
-                resultado_exitoso=False,
-                descripcion=f"Error al registrar: {str(e)[:200]}"
-            )
-            
-            return False, f"Error al registrar indicador: {e}"
-    
-    @staticmethod
-    def mostrar_menu_indicadores() -> None:
-        """Muestra el menú de indicadores disponibles"""
-        print("\n" + "="*60)
-        print("INDICADORES ECONÓMICOS DISPONIBLES")
-        print("="*60)
-        for key, value in Finance.INDICADORES.items():
-            print(f"{key}. {value['nombre']}")
-        print("="*60)
+            Auditoria.registrar_consulta(db, usuario, "REGISTRO_INDICADOR",
+                                        indicador_codigo=indicador.codigo,
+                                        resultado_exitoso=False,
+                                        descripcion=str(e)[:200])
+            return False, f"Error: {e}"
 
 
-def menu_principal():
-    """Menú principal del sistema"""
-    
-    print("\n" + "="*70)
-    print("SISTEMA DE GESTIÓN DE EMPLEADOS - ECOTECH SOLUTIONS")
-    print("Módulo de Indicadores Económicos")
-    print("="*70)
+def main(page: ft.Page):
+    page.title = "Sistema de Indicadores Económicos"
+    page.window.width = 900
+    page.window.height = 700
+    page.padding = 0
+    page.theme_mode = ft.ThemeMode.LIGHT
     
     # Inicializar base de datos
     try:
@@ -792,147 +449,341 @@ def menu_principal():
             dsn=os.getenv("ORACLE_DSN"),
             password=os.getenv("ORACLE_PASSWORD")
         )
-        print("✓ Conexión a base de datos establecida")
+        db.create_all_tables()
     except Exception as e:
-        print(f"✗ Error fatal: No se pudo conectar a la base de datos")
-        print(f"  {e}")
+        page.add(ft.Text(f"Error de conexión: {e}", color=ft.Colors.RED))
         return
     
-    # Crear tablas si no existen
-    print("\nInicializando tablas...")
-    
-    # Inicializar módulo de finanzas
     finance = Finance()
+    usuario_actual = {"username": None}
     
-    # Variables de sesión
-    usuario_actual = None
+    # Función para mostrar mensajes
+    def mostrar_mensaje(mensaje: str, es_error: bool = False):
+        snack = ft.SnackBar(
+            content=ft.Text(mensaje),
+            bgcolor=ft.Colors.RED_400 if es_error else ft.Colors.GREEN_400
+        )
+        page.overlay.append(snack)
+        snack.open = True
+        page.update()
     
-    while True:
-        print("\n" + "-"*70)
-        if usuario_actual:
-            print(f"Usuario activo: {usuario_actual}")
-        print("-"*70)
-        print("1. Registrar nuevo usuario")
-        print("2. Iniciar sesión")
-        print("3. Consultar indicador económico")
-        print("4. Consultar y registrar indicador")
-        print("5. Ver historial de indicadores")
-        print("6. Ver historial de consultas (Auditoría)")
-        print("7. Ver estadísticas de uso")
-        print("8. Cerrar sesión")
-        print("0. Salir")
-        print("-"*70)
+    # Vista de Login/Registro
+    def vista_auth():
+        username_field = ft.TextField(label="Usuario", width=300)
+        password_field = ft.TextField(label="Contraseña", password=True, can_reveal_password=True, width=300)
         
-        opcion = input("Seleccione una opción: ").strip()
-        
-        if opcion == "1":
-            # Registro de usuario
-            print("\n--- REGISTRO DE NUEVO USUARIO ---")
-            username = input("Ingrese nombre de usuario: ").strip()
-            password = input("Ingrese contraseña: ").strip()
+        def handle_login(e):
+            if not username_field.value or not password_field.value:
+                mostrar_mensaje("Complete todos los campos", True)
+                return
             
-            exito, mensaje = Auth.register(db, username, password)
+            exito, mensaje = Auth.login(db, username_field.value, password_field.value)
             if exito:
-                print(f"✓ {mensaje}")
+                usuario_actual["username"] = username_field.value
+                mostrar_mensaje(mensaje)
+                page.go("/menu")
             else:
-                print(f"✗ {mensaje}")
+                mostrar_mensaje(mensaje, True)
         
-        elif opcion == "2":
-            # Login
-            print("\n--- INICIO DE SESIÓN ---")
-            username = input("Usuario: ").strip()
-            password = input("Contraseña: ").strip()
+        def handle_register(e):
+            if not username_field.value or not password_field.value:
+                mostrar_mensaje("Complete todos los campos", True)
+                return
             
-            exito, mensaje = Auth.login(db, username, password)
+            exito, mensaje = Auth.register(db, username_field.value, password_field.value)
+            mostrar_mensaje(mensaje, not exito)
             if exito:
-                usuario_actual = username
-                print(f"✓ {mensaje}")
-            else:
-                print(f"✗ {mensaje}")
+                username_field.value = ""
+                password_field.value = ""
+                page.update()
         
-        elif opcion == "3":
-            # Consultar indicador (sin registrar)
-            if not usuario_actual:
-                print("✗ Debe iniciar sesión primero")
-                continue
+        return ft.View(
+            "/",
+            [
+                ft.Container(
+                    content=ft.Column(
+                        [
+                            ft.Text("SISTEMA DE INDICADORES ECONÓMICOS", 
+                                   size=24, weight=ft.FontWeight.BOLD,
+                                   text_align=ft.TextAlign.CENTER),
+                            ft.Text("EcoTech Solutions", size=16, color=ft.Colors.GREY_700),
+                            ft.Divider(height=30),
+                            username_field,
+                            password_field,
+                            ft.Row(
+                                [
+                                    ft.ElevatedButton("Iniciar Sesión", 
+                                                     on_click=handle_login,
+                                                     style=ft.ButtonStyle(
+                                                         bgcolor=ft.Colors.BLUE_700,
+                                                         color=ft.Colors.WHITE
+                                                     )),
+                                    ft.OutlinedButton("Registrarse", on_click=handle_register),
+                                ],
+                                alignment=ft.MainAxisAlignment.CENTER,
+                                spacing=10
+                            )
+                        ],
+                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                        spacing=15
+                    ),
+                    padding=40,
+                    bgcolor=ft.Colors.WHITE,
+                    border_radius=10,
+                    shadow=ft.BoxShadow(blur_radius=10, color=ft.Colors.GREY_300)
+                )
+            ],
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            vertical_alignment=ft.MainAxisAlignment.CENTER,
+            bgcolor=ft.Colors.BLUE_50
+        )
+    
+    # Vista del Menú Principal
+    def vista_menu():
+        def crear_boton_menu(texto, ruta, icono):
+            return ft.Container(
+                content=ft.Column(
+                    [
+                        ft.Icon(icono, size=40, color=ft.Colors.BLUE_700),
+                        ft.Text(texto, size=14, text_align=ft.TextAlign.CENTER, weight=ft.FontWeight.W_500)
+                    ],
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                    spacing=10
+                ),
+                padding=20,
+                bgcolor=ft.Colors.WHITE,
+                border_radius=10,
+                shadow=ft.BoxShadow(blur_radius=5, color=ft.Colors.GREY_300),
+                on_click=lambda _: page.go(ruta),
+                width=200,
+                height=150
+            )
+        
+        return ft.View(
+            "/menu",
+            [
+                ft.AppBar(
+                    title=ft.Text(f"Bienvenido: {usuario_actual['username']}"),
+                    bgcolor=ft.Colors.BLUE_700,
+                    actions=[
+                        ft.IconButton(
+                            icon=ft.Icons.LOGOUT,
+                            tooltip="Cerrar Sesión",
+                            on_click=lambda _: cerrar_sesion()
+                        )
+                    ]
+                ),
+                ft.Container(
+                    content=ft.Column(
+                        [
+                            ft.Text("Menú Principal", size=28, weight=ft.FontWeight.BOLD),
+                            ft.Divider(height=20),
+                            ft.Row(
+                                [
+                                    crear_boton_menu("Consultar\nIndicador", "/consultar", ft.Icons.SEARCH),
+                                    crear_boton_menu("Registrar\nIndicador", "/registrar", ft.Icons.SAVE),
+                                    crear_boton_menu("Historial", "/historial", ft.Icons.HISTORY),
+                                ],
+                                alignment=ft.MainAxisAlignment.CENTER,
+                                spacing=20,
+                                wrap=True
+                            ),
+                            ft.Row(
+                                [
+                                    crear_boton_menu("Auditoría", "/auditoria", ft.Icons.ASSESSMENT),
+                                    crear_boton_menu("Estadísticas", "/estadisticas", ft.Icons.BAR_CHART),
+                                ],
+                                alignment=ft.MainAxisAlignment.CENTER,
+                                spacing=20,
+                                wrap=True
+                            )
+                        ],
+                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                        spacing=20
+                    ),
+                    padding=40
+                )
+            ],
+            bgcolor=ft.Colors.BLUE_50
+        )
+    
+    def cerrar_sesion():
+        if usuario_actual["username"]:
+            Auditoria.registrar_consulta(db, usuario_actual["username"], "LOGOUT",
+                                        resultado_exitoso=True,
+                                        descripcion="Cierre de sesión")
+            usuario_actual["username"] = None
+        page.go("/")
+    
+    # Vista Consultar Indicador
+    def vista_consultar():
+        dropdown = ft.Dropdown(
+            label="Seleccione un indicador",
+            options=[ft.dropdown.Option(k, v) for k, v in Finance.INDICADORES.items()],
+            width=400
+        )
+        fecha_field = ft.TextField(
+            label="Fecha (DD-MM-YYYY)",
+            hint_text="Dejar vacío para hoy",
+            width=400
+        )
+        resultado_text = ft.Text("", size=16)
+        
+        def consultar(e):
+            if not dropdown.value:
+                mostrar_mensaje("Seleccione un indicador", True)
+                return
             
-            Finance.mostrar_menu_indicadores()
-            indicador_opcion = input("\nSeleccione un indicador (1-6): ").strip()
-            
-            if indicador_opcion not in Finance.INDICADORES:
-                print("✗ Opción inválida")
-                continue
-            
-            codigo = Finance.INDICADORES[indicador_opcion]['codigo']
-            
-            fecha_input = input("Fecha (DD-MM-YYYY) [Enter para hoy]: ").strip()
-            
-            if fecha_input:
-                es_valida, mensaje, fecha_normalizada = Validador.validar_fecha(fecha_input)
+            fecha = fecha_field.value if fecha_field.value else None
+            if fecha:
+                es_valida, mensaje, fecha_norm = Validador.validar_fecha(fecha)
                 if not es_valida:
-                    print(f"✗ {mensaje}")
-                    continue
-                fecha_input = fecha_normalizada
+                    mostrar_mensaje(mensaje, True)
+                    return
+                fecha = fecha_norm
             
-            print("\nConsultando indicador...")
-            indicador = finance.get_indicator(codigo, fecha_input, db, usuario_actual)
+            indicador = finance.get_indicator(dropdown.value, fecha, db, usuario_actual["username"])
             
             if indicador:
-                print(f"\n✓ {indicador}")
+                resultado_text.value = f"✓ {indicador}"
+                resultado_text.color = ft.Colors.GREEN_700
+                mostrar_mensaje("Consulta exitosa")
             else:
-                print("✗ No se pudo obtener el indicador")
+                resultado_text.value = "✗ No se pudo obtener el indicador"
+                resultado_text.color = ft.Colors.RED_700
+                mostrar_mensaje("Error en la consulta", True)
+            
+            page.update()
         
-        elif opcion == "4":
-            # Consultar y registrar indicador
-            if not usuario_actual:
-                print("✗ Debe iniciar sesión primero")
-                continue
+        return ft.View(
+            "/consultar",
+            [
+                ft.AppBar(
+                    title=ft.Text("Consultar Indicador"),
+                    bgcolor=ft.Colors.BLUE_700,
+                    leading=ft.IconButton(ft.Icons.ARROW_BACK, on_click=lambda _: page.go("/menu"))
+                ),
+                ft.Container(
+                    content=ft.Column(
+                        [
+                            ft.Text("Consulta de Indicadores Económicos", size=24, weight=ft.FontWeight.BOLD),
+                            ft.Divider(height=20),
+                            dropdown,
+                            fecha_field,
+                            ft.ElevatedButton("Consultar", on_click=consultar, 
+                                            style=ft.ButtonStyle(bgcolor=ft.Colors.BLUE_700)),
+                            ft.Divider(height=20),
+                            resultado_text
+                        ],
+                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                        spacing=15
+                    ),
+                    padding=40
+                )
+            ],
+            bgcolor=ft.Colors.BLUE_50
+        )
+    
+    # Vista Registrar Indicador
+    def vista_registrar():
+        dropdown = ft.Dropdown(
+            label="Seleccione un indicador",
+            options=[ft.dropdown.Option(k, v) for k, v in Finance.INDICADORES.items()],
+            width=400
+        )
+        fecha_field = ft.TextField(label="Fecha (DD-MM-YYYY)", hint_text="Dejar vacío para hoy", width=400)
+        resultado_container = ft.Column([], spacing=10)
+        
+        def consultar_y_registrar(e):
+            if not dropdown.value:
+                mostrar_mensaje("Seleccione un indicador", True)
+                return
             
-            Finance.mostrar_menu_indicadores()
-            indicador_opcion = input("\nSeleccione un indicador (1-6): ").strip()
-            
-            if indicador_opcion not in Finance.INDICADORES:
-                print("✗ Opción inválida")
-                continue
-            
-            codigo = Finance.INDICADORES[indicador_opcion]['codigo']
-            
-            fecha_input = input("Fecha (DD-MM-YYYY) [Enter para hoy]: ").strip()
-            
-            if fecha_input:
-                es_valida, mensaje, fecha_normalizada = Validador.validar_fecha(fecha_input)
+            fecha = fecha_field.value if fecha_field.value else None
+            if fecha:
+                es_valida, mensaje, fecha_norm = Validador.validar_fecha(fecha)
                 if not es_valida:
-                    print(f"✗ {mensaje}")
-                    continue
-                fecha_input = fecha_normalizada
+                    mostrar_mensaje(mensaje, True)
+                    return
+                fecha = fecha_norm
             
-            print("\nConsultando indicador...")
-            indicador = finance.get_indicator(codigo, fecha_input, db, usuario_actual)
+            indicador = finance.get_indicator(dropdown.value, fecha, db, usuario_actual["username"])
             
             if indicador:
-                print(f"\n✓ {indicador}")
+                resultado_container.controls.clear()
+                resultado_container.controls.append(
+                    ft.Text(f"✓ {indicador}", size=16, color=ft.Colors.GREEN_700)
+                )
                 
-                registrar = input("\n¿Desea registrar este indicador? (s/n): ").strip().lower()
-                if registrar == 's':
-                    exito, mensaje = finance.registrar_indicador(db, indicador, usuario_actual)
+                def registrar_ahora(e):
+                    exito, msg = finance.registrar_indicador(db, indicador, usuario_actual["username"])
+                    mostrar_mensaje(msg, not exito)
                     if exito:
-                        print(f"✓ {mensaje}")
-                    else:
-                        print(f"✗ {mensaje}")
+                        resultado_container.controls.clear()
+                        page.update()
+                
+                resultado_container.controls.append(
+                    ft.ElevatedButton("Registrar en BD", on_click=registrar_ahora,
+                                    style=ft.ButtonStyle(bgcolor=ft.Colors.GREEN_700))
+                )
+                mostrar_mensaje("Consulta exitosa")
             else:
-                print("✗ No se pudo obtener el indicador")
+                resultado_container.controls.clear()
+                resultado_container.controls.append(
+                    ft.Text("✗ No se pudo obtener el indicador", color=ft.Colors.RED_700)
+                )
+                mostrar_mensaje("Error en la consulta", True)
+            
+            page.update()
         
-        elif opcion == "5":
-            # Ver historial
-            if not usuario_actual:
-                print("✗ Debe iniciar sesión primero")
-                continue
-            
-            print("\n--- HISTORIAL DE INDICADORES CONSULTADOS ---")
-            
+        return ft.View(
+            "/registrar",
+            [
+                ft.AppBar(
+                    title=ft.Text("Consultar y Registrar"),
+                    bgcolor=ft.Colors.BLUE_700,
+                    leading=ft.IconButton(ft.Icons.ARROW_BACK, on_click=lambda _: page.go("/menu"))
+                ),
+                ft.Container(
+                    content=ft.Column(
+                        [
+                            ft.Text("Consultar y Registrar Indicador", size=24, weight=ft.FontWeight.BOLD),
+                            ft.Divider(height=20),
+                            dropdown,
+                            fecha_field,
+                            ft.ElevatedButton("Consultar", on_click=consultar_y_registrar,
+                                            style=ft.ButtonStyle(bgcolor=ft.Colors.BLUE_700)),
+                            ft.Divider(height=20),
+                            resultado_container
+                        ],
+                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                        spacing=15
+                    ),
+                    padding=40
+                )
+            ],
+            bgcolor=ft.Colors.BLUE_50
+        )
+    
+    # Vista Historial
+    def vista_historial():
+        tabla = ft.DataTable(
+            columns=[
+                ft.DataColumn(ft.Text("Indicador", weight=ft.FontWeight.BOLD)),
+                ft.DataColumn(ft.Text("Valor", weight=ft.FontWeight.BOLD)),
+                ft.DataColumn(ft.Text("Fecha Indicador", weight=ft.FontWeight.BOLD)),
+                ft.DataColumn(ft.Text("Fecha Consulta", weight=ft.FontWeight.BOLD)),
+            ],
+            rows=[],
+            border=ft.border.all(1, ft.Colors.GREY_300),
+            border_radius=10,
+            horizontal_lines=ft.border.BorderSide(1, ft.Colors.GREY_200)
+        )
+        
+        def cargar_historial():
             try:
                 resultados = db.query(
-                    sql="""
+                    """
                     SELECT nombre_indicador, valor, 
                            TO_CHAR(fecha_valor, 'DD-MM-YYYY'),
                            TO_CHAR(fecha_consulta, 'DD-MM-YYYY HH24:MI:SS'),
@@ -941,114 +792,324 @@ def menu_principal():
                     WHERE usuario_consulta = :p_usuario
                     ORDER BY fecha_consulta DESC
                     """,
-                    parameters={"p_usuario": usuario_actual}
+                    {"p_usuario": usuario_actual["username"]}
                 )
                 
+                tabla.rows.clear()
                 if resultados and len(resultados) > 0:
-                    print(f"\nTotal de registros: {len(resultados)}\n")
-                    for i, fila in enumerate(resultados, 1):
-                        print(f"{i}. {fila[0]}")
-                        print(f"   Valor: ${fila[1]:,.2f}")
-                        print(f"   Fecha del indicador: {fila[2]}")
-                        print(f"   Fecha de consulta: {fila[3]}")
-                        print()
+                    for fila in resultados:
+                        tabla.rows.append(
+                            ft.DataRow(
+                                cells=[
+                                    ft.DataCell(ft.Text(fila[0])),
+                                    ft.DataCell(ft.Text(f"${fila[1]:,.2f}")),
+                                    ft.DataCell(ft.Text(fila[2])),
+                                    ft.DataCell(ft.Text(fila[3])),
+                                ]
+                            )
+                        )
+                    mostrar_mensaje(f"Se encontraron {len(resultados)} registros")
                 else:
-                    print("No hay registros de indicadores consultados")
-                    
+                    mostrar_mensaje("No hay registros", True)
+                
+                page.update()
             except Exception as e:
-                print(f"✗ Error al consultar historial: {e}")
+                mostrar_mensaje(f"Error: {e}", True)
         
-        elif opcion == "6":
-            # Ver historial de auditoría
-            if not usuario_actual:
-                print("✗ Debe iniciar sesión primero")
-                continue
+        cargar_historial()
+        
+        return ft.View(
+            "/historial",
+            [
+                ft.AppBar(
+                    title=ft.Text("Historial de Indicadores"),
+                    bgcolor=ft.Colors.BLUE_700,
+                    leading=ft.IconButton(ft.Icons.ARROW_BACK, on_click=lambda _: page.go("/menu"))
+                ),
+                ft.Container(
+                    content=ft.Column(
+                        [
+                            ft.Text("Historial de Consultas", size=24, weight=ft.FontWeight.BOLD),
+                            ft.Divider(height=20),
+                            ft.Container(
+                                content=ft.Column(
+                                    [tabla],
+                                    scroll=ft.ScrollMode.AUTO
+                                ),
+                                height=500
+                            ),
+                            ft.ElevatedButton(
+                                "Actualizar",
+                                icon=ft.Icons.REFRESH,
+                                on_click=lambda _: cargar_historial(),
+                                style=ft.ButtonStyle(bgcolor=ft.Colors.BLUE_700)
+                            )
+                        ],
+                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                        spacing=15
+                    ),
+                    padding=40
+                )
+            ],
+            bgcolor=ft.Colors.BLUE_50
+        )
+    
+    # Vista Auditoría
+    def vista_auditoria():
+        lista_auditoria = ft.Column([], spacing=10, scroll=ft.ScrollMode.AUTO)
+        
+        def cargar_auditoria():
+            resultados = Auditoria.obtener_consultas_usuario(db, usuario_actual["username"], limite=30)
             
-            print("\n--- HISTORIAL DE CONSULTAS (AUDITORÍA) ---")
-            
-            resultados = Auditoria.obtener_consultas_usuario(db, usuario_actual, limite=30)
-            
+            lista_auditoria.controls.clear()
             if resultados and len(resultados) > 0:
-                print(f"\nÚltimas {len(resultados)} consultas:\n")
                 for i, fila in enumerate(resultados, 1):
                     tipo_consulta = fila[0]
                     indicador = fila[1] or "N/A"
                     fecha_solicitada = fila[2] or "N/A"
                     fecha_hora = fila[3]
-                    exitoso = "✓" if fila[4] == 'S' else "✗"
+                    exitoso = fila[4] == 'S'
                     descripcion = fila[5] or ""
                     
-                    print(f"{i}. [{exitoso}] {tipo_consulta}")
-                    print(f"   Fecha/Hora: {fecha_hora}")
-                    if indicador != "N/A":
-                        print(f"   Indicador: {indicador}")
-                    if fecha_solicitada != "N/A":
-                        print(f"   Fecha solicitada: {fecha_solicitada}")
-                    if descripcion:
-                        print(f"   Descripción: {descripcion}")
-                    print()
+                    card = ft.Container(
+                        content=ft.Column(
+                            [
+                                ft.Row(
+                                    [
+                                        ft.Icon(
+                                            ft.Icons.CHECK_CIRCLE if exitoso else ft.Icons.ERROR,
+                                            color=ft.Colors.GREEN_700 if exitoso else ft.Colors.RED_700,
+                                            size=20
+                                        ),
+                                        ft.Text(tipo_consulta, weight=ft.FontWeight.BOLD, size=16)
+                                    ],
+                                    spacing=10
+                                ),
+                                ft.Text(f"Fecha/Hora: {fecha_hora}", size=12),
+                                ft.Text(f"Indicador: {indicador}", size=12) if indicador != "N/A" else ft.Container(),
+                                ft.Text(f"Fecha solicitada: {fecha_solicitada}", size=12) if fecha_solicitada != "N/A" else ft.Container(),
+                                ft.Text(f"Descripción: {descripcion}", size=12, italic=True) if descripcion else ft.Container(),
+                            ],
+                            spacing=5
+                        ),
+                        padding=15,
+                        bgcolor=ft.Colors.WHITE,
+                        border_radius=10,
+                        border=ft.border.all(1, ft.Colors.GREEN_200 if exitoso else ft.Colors.RED_200)
+                    )
+                    lista_auditoria.controls.append(card)
+                
+                mostrar_mensaje(f"Se encontraron {len(resultados)} registros")
             else:
-                print("No hay consultas registradas")
+                lista_auditoria.controls.append(
+                    ft.Text("No hay consultas registradas", size=16, color=ft.Colors.GREY_700)
+                )
+            
+            page.update()
         
-        elif opcion == "7":
-            # Ver estadísticas
-            if not usuario_actual:
-                print("✗ Debe iniciar sesión primero")
-                continue
+        cargar_auditoria()
+        
+        return ft.View(
+            "/auditoria",
+            [
+                ft.AppBar(
+                    title=ft.Text("Auditoría de Consultas"),
+                    bgcolor=ft.Colors.BLUE_700,
+                    leading=ft.IconButton(ft.Icons.ARROW_BACK, on_click=lambda _: page.go("/menu"))
+                ),
+                ft.Container(
+                    content=ft.Column(
+                        [
+                            ft.Text("Historial de Auditoría", size=24, weight=ft.FontWeight.BOLD),
+                            ft.Divider(height=20),
+                            ft.Container(
+                                content=lista_auditoria,
+                                height=500
+                            ),
+                            ft.ElevatedButton(
+                                "Actualizar",
+                                icon=ft.Icons.REFRESH,
+                                on_click=lambda _: cargar_auditoria(),
+                                style=ft.ButtonStyle(bgcolor=ft.Colors.BLUE_700)
+                            )
+                        ],
+                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                        spacing=15
+                    ),
+                    padding=40
+                )
+            ],
+            bgcolor=ft.Colors.BLUE_50
+        )
+    
+    # Vista Estadísticas
+    def vista_estadisticas():
+        stats_container = ft.Column([], spacing=15)
+        
+        def cargar_estadisticas():
+            stats = Auditoria.obtener_estadisticas_usuario(db, usuario_actual["username"])
             
-            print("\n--- ESTADÍSTICAS DE USO ---")
-            
-            stats = Auditoria.obtener_estadisticas_usuario(db, usuario_actual)
-            
+            stats_container.controls.clear()
             if stats:
-                print(f"\nTotal de consultas: {stats['total_consultas']}")
-                print(f"Consultas exitosas: {stats['exitosas']}")
-                print(f"Consultas fallidas: {stats['fallidas']}")
+                tasa_exito = (stats['exitosas'] / stats['total_consultas'] * 100) if stats['total_consultas'] > 0 else 0
                 
-                if stats['total_consultas'] > 0:
-                    tasa_exito = (stats['exitosas'] / stats['total_consultas']) * 100
-                    print(f"Tasa de éxito: {tasa_exito:.1f}%")
+                # Crear tarjetas de estadísticas
+                cards = [
+                    ("Total de Consultas", str(stats['total_consultas']), ft.Icons.SEARCH, ft.Colors.BLUE_700),
+                    ("Consultas Exitosas", str(stats['exitosas']), ft.Icons.CHECK_CIRCLE, ft.Colors.GREEN_700),
+                    ("Consultas Fallidas", str(stats['fallidas']), ft.Icons.ERROR, ft.Colors.RED_700),
+                    ("Tasa de Éxito", f"{tasa_exito:.1f}%", ft.Icons.TRENDING_UP, ft.Colors.ORANGE_700),
+                    ("Indicadores Distintos", str(stats['indicadores_distintos']), ft.Icons.ANALYTICS, ft.Colors.PURPLE_700),
+                ]
                 
-                print(f"Indicadores distintos consultados: {stats['indicadores_distintos']}")
-                print(f"Primera consulta: {stats['primera_consulta']}")
-                print(f"Última consulta: {stats['ultima_consulta']}")
-            else:
-                print("No hay estadísticas disponibles")
-        
-        elif opcion == "8":
-            # Cerrar sesión
-            if usuario_actual:
-                # Registrar cierre de sesión
-                Auditoria.registrar_consulta(
-                    db, usuario_actual, "LOGOUT",
-                    resultado_exitoso=True,
-                    descripcion="Cierre de sesión"
+                for titulo, valor, icono, color in cards:
+                    card = ft.Container(
+                        content=ft.Column(
+                            [
+                                ft.Icon(icono, size=40, color=color),
+                                ft.Text(titulo, size=14, weight=ft.FontWeight.W_500, text_align=ft.TextAlign.CENTER),
+                                ft.Text(valor, size=24, weight=ft.FontWeight.BOLD, color=color)
+                            ],
+                            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                            spacing=10
+                        ),
+                        padding=20,
+                        bgcolor=ft.Colors.WHITE,
+                        border_radius=10,
+                        shadow=ft.BoxShadow(blur_radius=5, color=ft.Colors.GREY_300),
+                        width=180,
+                        height=150
+                    )
+                    stats_container.controls.append(card)
+                
+                # Información adicional
+                stats_container.controls.append(ft.Divider(height=20))
+                stats_container.controls.append(
+                    ft.Container(
+                        content=ft.Column(
+                            [
+                                ft.Text("Información Temporal", size=18, weight=ft.FontWeight.BOLD),
+                                ft.Text(f"Primera consulta: {stats['primera_consulta']}", size=14),
+                                ft.Text(f"Última consulta: {stats['ultima_consulta']}", size=14),
+                            ],
+                            spacing=10
+                        ),
+                        padding=20,
+                        bgcolor=ft.Colors.WHITE,
+                        border_radius=10,
+                        border=ft.border.all(1, ft.Colors.GREY_300)
+                    )
                 )
-                print(f"✓ Sesión cerrada para {usuario_actual}")
-                usuario_actual = None
+                
+                mostrar_mensaje("Estadísticas cargadas")
             else:
-                print("✗ No hay sesión activa")
-        
-        elif opcion == "0":
-            # Salir
-            if usuario_actual:
-                Auditoria.registrar_consulta(
-                    db, usuario_actual, "LOGOUT",
-                    resultado_exitoso=True,
-                    descripcion="Salida del sistema"
+                stats_container.controls.append(
+                    ft.Text("No hay estadísticas disponibles", size=16, color=ft.Colors.GREY_700)
                 )
-            print("\n¡Gracias por usar el sistema!")
-            print("="*70)
-            break
+            
+            page.update()
         
-        else:
-            print("✗ Opción inválida")
+        cargar_estadisticas()
+        
+        return ft.View(
+            "/estadisticas",
+            [
+                ft.AppBar(
+                    title=ft.Text("Estadísticas de Uso"),
+                    bgcolor=ft.Colors.BLUE_700,
+                    leading=ft.IconButton(ft.Icons.ARROW_BACK, on_click=lambda _: page.go("/menu"))
+                ),
+                ft.Container(
+                    content=ft.Column(
+                        [
+                            ft.Text("Estadísticas del Usuario", size=24, weight=ft.FontWeight.BOLD),
+                            ft.Divider(height=20),
+                            ft.Container(
+                                content=ft.Column(
+                                    [
+                                        ft.Row(
+                                            stats_container.controls[:3] if len(stats_container.controls) > 0 else [],
+                                            alignment=ft.MainAxisAlignment.CENTER,
+                                            spacing=20,
+                                            wrap=True
+                                        ),
+                                        ft.Row(
+                                            stats_container.controls[3:5] if len(stats_container.controls) > 3 else [],
+                                            alignment=ft.MainAxisAlignment.CENTER,
+                                            spacing=20,
+                                            wrap=True
+                                        ),
+                                        stats_container.controls[6] if len(stats_container.controls) > 6 else ft.Container(),
+                                        stats_container.controls[7] if len(stats_container.controls) > 7 else ft.Container(),
+                                    ],
+                                    scroll=ft.ScrollMode.AUTO
+                                ),
+                                height=500
+                            ),
+                            ft.ElevatedButton(
+                                "Actualizar",
+                                icon=ft.Icons.REFRESH,
+                                on_click=lambda _: cargar_estadisticas(),
+                                style=ft.ButtonStyle(bgcolor=ft.Colors.BLUE_700)
+                            )
+                        ],
+                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                        spacing=15
+                    ),
+                    padding=40
+                )
+            ],
+            bgcolor=ft.Colors.BLUE_50
+        )
+    
+    # Manejo de rutas
+    def route_change(route):
+        page.views.clear()
+        
+        if page.route == "/":
+            page.views.append(vista_auth())
+        elif page.route == "/menu":
+            if not usuario_actual["username"]:
+                page.go("/")
+                return
+            page.views.append(vista_menu())
+        elif page.route == "/consultar":
+            if not usuario_actual["username"]:
+                page.go("/")
+                return
+            page.views.append(vista_consultar())
+        elif page.route == "/registrar":
+            if not usuario_actual["username"]:
+                page.go("/")
+                return
+            page.views.append(vista_registrar())
+        elif page.route == "/historial":
+            if not usuario_actual["username"]:
+                page.go("/")
+                return
+            page.views.append(vista_historial())
+        elif page.route == "/auditoria":
+            if not usuario_actual["username"]:
+                page.go("/")
+                return
+            page.views.append(vista_auditoria())
+        elif page.route == "/estadisticas":
+            if not usuario_actual["username"]:
+                page.go("/")
+                return
+            page.views.append(vista_estadisticas())
+        
+        page.update()
+    
+    def view_pop(view):
+        page.views.pop()
+        top_view = page.views[-1]
+        page.go(top_view.route)
+    
+    page.on_route_change = route_change
+    page.on_view_pop = view_pop
+    page.go(page.route)
 
 
 if __name__ == "__main__":
-    try:
-        menu_principal()
-    except KeyboardInterrupt:
-        print("\n\n✓ Programa interrumpido por el usuario")
-    except Exception as e:
-        print(f"\n✗ Error fatal: {e}")
+    ft.app(target=main)
