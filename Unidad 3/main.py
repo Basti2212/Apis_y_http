@@ -1058,7 +1058,7 @@ def main(page: ft.Page):
                     ),
                     padding=40
                 )
-            ],
+            ], 
             bgcolor=ft.Colors.BLUE_50
         )
     
